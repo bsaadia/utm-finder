@@ -1,2 +1,236 @@
 <!DOCTYPE html>
-<html><body><p>Phase 3 coming soon.</p></body></html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UTM Finder</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: #f5f5f5;
+    }
+
+    header {
+      padding: 12px 16px;
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    header h1 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #222;
+      white-space: nowrap;
+    }
+
+    #search-wrap {
+      display: flex;
+      gap: 6px;
+      flex: 1;
+      min-width: 200px;
+    }
+
+    #search {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 0.875rem;
+    }
+
+    button {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.875rem;
+      cursor: pointer;
+      background: #2563eb;
+      color: #fff;
+    }
+
+    button:hover { background: #1d4ed8; }
+
+    #upload-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #upload-wrap label {
+      font-size: 0.8rem;
+      color: #555;
+      white-space: nowrap;
+    }
+
+    #file-input { font-size: 0.8rem; }
+
+    #map { flex: 1; min-height: 0; }
+
+    #result-bar {
+      padding: 10px 16px;
+      background: #fff;
+      border-top: 1px solid #e0e0e0;
+      font-size: 0.875rem;
+      color: #333;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    #result-bar.error { color: #dc2626; }
+
+    #result-zone { font-weight: 700; font-size: 1rem; }
+    #result-crs  { color: #555; }
+    #result-coords { color: #888; font-size: 0.8rem; margin-left: auto; }
+
+    #result-bar.empty { color: #aaa; }
+    #result-bar.loading { color: #888; }
+
+    .leaflet-container { cursor: crosshair !important; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>UTM Finder</h1>
+
+  <div id="search-wrap">
+    <input id="search" type="text" placeholder="Search a place…" />
+    <button id="search-btn">Go</button>
+  </div>
+
+  <div id="upload-wrap">
+    <label for="file-input">GeoTIFF / KML:</label>
+    <input id="file-input" type="file" accept=".tif,.tiff,.kml" />
+  </div>
+</header>
+
+<div id="map"></div>
+
+<div id="result-bar" class="empty">
+  <span id="result-zone">Click the map or search a place to get its UTM zone.</span>
+  <span id="result-crs"></span>
+  <span id="result-coords"></span>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map("map").setView([20, 0], 2);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "© OpenStreetMap contributors",
+    maxZoom: 19,
+  }).addTo(map);
+
+  let marker = null;
+
+  function setMarker(lat, lon, popupText) {
+    if (marker) marker.setLatLng([lat, lon]);
+    else marker = L.marker([lat, lon]).addTo(map);
+    if (popupText) marker.bindPopup(popupText).openPopup();
+  }
+
+  function showResult(data, lat, lon) {
+    const bar = document.getElementById("result-bar");
+    bar.className = "";
+    const band = data.zone_letter ? ` (band ${data.zone_letter})` : "";
+    document.getElementById("result-zone").textContent =
+      `UTM Zone ${data.zone_number}${data.hemisphere}${band}`;
+    document.getElementById("result-crs").textContent =
+      `${data.crs_code} — ${data.crs_name}`;
+    document.getElementById("result-coords").textContent =
+      `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  }
+
+  function showLoading() {
+    const bar = document.getElementById("result-bar");
+    bar.className = "loading";
+    document.getElementById("result-zone").textContent = "Looking up UTM zone…";
+    document.getElementById("result-crs").textContent = "";
+    document.getElementById("result-coords").textContent = "";
+  }
+
+  function showError(msg) {
+    const bar = document.getElementById("result-bar");
+    bar.className = "error";
+    document.getElementById("result-zone").textContent = msg;
+    document.getElementById("result-crs").textContent = "";
+    document.getElementById("result-coords").textContent = "";
+  }
+
+  async function queryUTM(lat, lon) {
+    showLoading();
+    const res = await fetch("/utm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat, lon }),
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error ?? "Unknown error"); return; }
+    const band = data.zone_letter ? ` (band ${data.zone_letter})` : "";
+    const popup = `<b>UTM Zone ${data.zone_number}${data.hemisphere}${band}</b><br>${data.crs_code}`;
+    setMarker(lat, lon, popup);
+    showResult(data, lat, lon);
+  }
+
+  // Map click
+  map.on("click", (e) => queryUTM(e.latlng.lat, e.latlng.lng));
+
+  // Place search
+  async function doSearch() {
+    const q = document.getElementById("search").value.trim();
+    if (!q) return;
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`,
+      { headers: { "Accept-Language": "en" } }
+    );
+    const results = await res.json();
+    if (!results.length) { showError(`No results for "${q}"`); return; }
+    const { lat, lon } = results[0];
+    map.flyTo([lat, lon], 8);
+    queryUTM(parseFloat(lat), parseFloat(lon));
+  }
+
+  document.getElementById("search-btn").addEventListener("click", doSearch);
+  document.getElementById("search").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") doSearch();
+  });
+
+  // File upload
+  document.getElementById("file-input").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    showLoading();
+    const form = new FormData();
+    form.append("file", file);
+
+    const res = await fetch("/utm/file", { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error ?? "Unknown error"); return; }
+
+    const lat = data.centroid_lat;
+    const lon = data.centroid_lon;
+    const band = data.zone_letter ? ` (band ${data.zone_letter})` : "";
+    const popup = `<b>UTM Zone ${data.zone_number}${data.hemisphere}${band}</b><br>${data.crs_code}`;
+    map.flyTo([lat, lon], 8);
+    setMarker(lat, lon, popup);
+    showResult(data, lat, lon);
+
+    // Reset input so the same file can be re-uploaded
+    e.target.value = "";
+  });
+</script>
+</body>
+</html>

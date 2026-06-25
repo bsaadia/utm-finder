@@ -4,7 +4,7 @@
     {
       "name": "Flask Dev Server",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "FLASK_APP=app.py python -m flask run --debug"],
+      "runtimeArgs": ["-c", "FLASK_APP=app.py FLASK_DEBUG=1 python -m flask run --port $PORT"],
       "port": 5000,
       "autoPort": true
     }
