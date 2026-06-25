@@ -68,10 +68,18 @@ def _centroid_from_tiff(file_storage):
     with rasterio.open(io.BytesIO(data)) as ds:
         bounds = ds.bounds
         src_crs = ds.crs
-        if src_crs and not src_crs.is_geographic:
-            left, bottom, right, top = transform_bounds(src_crs, CRS.from_epsg(4326), *bounds)
-        else:
-            left, bottom, right, top = bounds.left, bounds.bottom, bounds.right, bounds.top
+
+        if src_crs is None:
+            raise ValueError("File has no CRS defined — cannot verify it is WGS84.")
+
+        wgs84 = CRS.from_epsg(4326)
+        if not src_crs.is_geographic or not src_crs.equals(wgs84):
+            raise ValueError(
+                f"File CRS is {src_crs.to_string()!r}, not WGS84 (EPSG:4326). "
+                "Reproject to WGS84 before uploading."
+            )
+
+        left, bottom, right, top = bounds.left, bounds.bottom, bounds.right, bounds.top
 
     lat = (bottom + top) / 2
     lon = (left + right) / 2

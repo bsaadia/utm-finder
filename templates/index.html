@@ -26,19 +26,9 @@
       flex-wrap: wrap;
     }
 
-    header h1 {
-      font-size: 1rem;
-      font-weight: 600;
-      color: #222;
-      white-space: nowrap;
-    }
+    header h1 { font-size: 1rem; font-weight: 600; color: #222; white-space: nowrap; }
 
-    #search-wrap {
-      display: flex;
-      gap: 6px;
-      flex: 1;
-      min-width: 200px;
-    }
+    #search-wrap { display: flex; gap: 6px; flex: 1; min-width: 200px; }
 
     #search {
       flex: 1;
@@ -57,25 +47,99 @@
       background: #2563eb;
       color: #fff;
     }
-
     button:hover { background: #1d4ed8; }
+    button.secondary {
+      background: #fff;
+      color: #2563eb;
+      border: 1px solid #2563eb;
+    }
+    button.secondary:hover { background: #eff6ff; }
 
-    #upload-wrap {
-      display: flex;
+    /* Map + overlay container */
+    #map-wrap { flex: 1; min-height: 0; position: relative; }
+    #map { width: 100%; height: 100%; }
+    .leaflet-container { cursor: crosshair !important; }
+
+    /* Upload overlay */
+    #upload-overlay {
+      display: none;
+      position: absolute;
+      inset: 0;
+      z-index: 1000;
+      background: rgba(255,255,255,0.55);
+      backdrop-filter: blur(2px);
       align-items: center;
-      gap: 6px;
+      justify-content: center;
+    }
+    #upload-overlay.visible { display: flex; }
+
+    #upload-box {
+      background: rgba(255,255,255,0.92);
+      border: 2px dashed #93c5fd;
+      border-radius: 12px;
+      padding: 40px 48px;
+      text-align: center;
+      min-width: 320px;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    #upload-box.drag-over {
+      border-color: #2563eb;
+      background: rgba(239,246,255,0.96);
     }
 
-    #upload-wrap label {
+    #upload-box .icon { font-size: 2.5rem; line-height: 1; }
+
+    #upload-box h2 { font-size: 1rem; font-weight: 600; color: #1e293b; }
+
+    #upload-box p { font-size: 0.8rem; color: #64748b; line-height: 1.5; }
+
+    #upload-box .formats {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      background: #f1f5f9;
+      border-radius: 6px;
+      padding: 6px 12px;
+    }
+
+    #upload-box .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+
+    #upload-error {
       font-size: 0.8rem;
-      color: #555;
-      white-space: nowrap;
+      color: #dc2626;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 6px;
+      padding: 8px 12px;
+      width: 100%;
+      display: none;
     }
+    #upload-error.visible { display: block; }
 
-    #file-input { font-size: 0.8rem; }
+    /* Spinner */
+    #upload-spinner {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+    #upload-spinner.visible { display: flex; }
+    #upload-drop-content.hidden { display: none; }
 
-    #map { flex: 1; min-height: 0; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #e2e8f0;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* Result bar */
     #result-bar {
       padding: 10px 16px;
       background: #fff;
@@ -87,36 +151,51 @@
       align-items: center;
       gap: 16px;
     }
-
     #result-bar.error { color: #dc2626; }
-
+    #result-bar.loading { color: #888; }
+    #result-bar.empty { color: #aaa; }
     #result-zone { font-weight: 700; font-size: 1rem; }
     #result-crs  { color: #555; }
     #result-coords { color: #888; font-size: 0.8rem; margin-left: auto; }
-
-    #result-bar.empty { color: #aaa; }
-    #result-bar.loading { color: #888; }
-
-    .leaflet-container { cursor: crosshair !important; }
   </style>
 </head>
 <body>
 
 <header>
   <h1>UTM Finder</h1>
-
   <div id="search-wrap">
     <input id="search" type="text" placeholder="Search a place…" />
     <button id="search-btn">Go</button>
   </div>
-
-  <div id="upload-wrap">
-    <label for="file-input">GeoTIFF / KML:</label>
-    <input id="file-input" type="file" accept=".tif,.tiff,.kml" />
-  </div>
+  <button class="secondary" id="open-upload-btn">Upload file</button>
 </header>
 
-<div id="map"></div>
+<div id="map-wrap">
+  <div id="map"></div>
+
+  <div id="upload-overlay">
+    <div id="upload-box">
+
+      <div id="upload-drop-content">
+        <div class="icon">📂</div>
+        <h2>Upload a spatial file</h2>
+        <p>Drag and drop your file here, or browse to select one.<br>The file must be in <strong>WGS84</strong> (EPSG:4326).</p>
+        <div class="formats">Accepted formats: GeoTIFF (.tif, .tiff) · KML (.kml)</div>
+        <div id="upload-error"></div>
+        <div class="btn-row">
+          <button class="secondary" id="cancel-upload-btn">Cancel</button>
+          <button id="browse-btn">Browse</button>
+        </div>
+      </div>
+
+      <div id="upload-spinner">
+        <div class="spinner"></div>
+        <p style="color:#64748b;font-size:0.85rem;">Uploading and detecting UTM zone…</p>
+      </div>
+
+    </div>
+  </div>
+</div>
 
 <div id="result-bar" class="empty">
   <span id="result-zone">Click the map or search a place to get its UTM zone.</span>
@@ -124,10 +203,11 @@
   <span id="result-coords"></span>
 </div>
 
+<input id="file-input" type="file" accept=".tif,.tiff,.kml" style="display:none" />
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
   const map = L.map("map").setView([20, 0], 2);
-
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     attribution: "© OpenStreetMap contributors",
     maxZoom: 19,
@@ -207,18 +287,108 @@
     if (e.key === "Enter") doSearch();
   });
 
-  // File upload
-  document.getElementById("file-input").addEventListener("change", async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  // ── Upload overlay ──────────────────────────────────────────────────────────
+  const overlay      = document.getElementById("upload-overlay");
+  const uploadBox    = document.getElementById("upload-box");
+  const dropContent  = document.getElementById("upload-drop-content");
+  const spinner      = document.getElementById("upload-spinner");
+  const uploadError  = document.getElementById("upload-error");
+  const fileInput    = document.getElementById("file-input");
 
-    showLoading();
+  function openOverlay() {
+    setOverlayIdle();
+    overlay.classList.add("visible");
+  }
+
+  function closeOverlay() {
+    overlay.classList.remove("visible");
+    fileInput.value = "";
+  }
+
+  function setOverlayIdle() {
+    dropContent.classList.remove("hidden");
+    spinner.classList.remove("visible");
+    uploadError.classList.remove("visible");
+    uploadError.textContent = "";
+  }
+
+  function setOverlayLoading() {
+    dropContent.classList.add("hidden");
+    spinner.classList.add("visible");
+    uploadError.classList.remove("visible");
+  }
+
+  function setOverlayError(msg) {
+    dropContent.classList.remove("hidden");
+    spinner.classList.remove("visible");
+    uploadError.textContent = msg;
+    uploadError.classList.add("visible");
+  }
+
+  document.getElementById("open-upload-btn").addEventListener("click", openOverlay);
+  document.getElementById("cancel-upload-btn").addEventListener("click", closeOverlay);
+  document.getElementById("browse-btn").addEventListener("click", () => fileInput.click());
+
+  // Close overlay when clicking outside the box
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) closeOverlay();
+  });
+
+  // Drag-and-drop on the box
+  uploadBox.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    uploadBox.classList.add("drag-over");
+  });
+  uploadBox.addEventListener("dragleave", () => uploadBox.classList.remove("drag-over"));
+  uploadBox.addEventListener("drop", (e) => {
+    e.preventDefault();
+    uploadBox.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+
+  // Also allow dragging onto the map itself to open overlay + accept drop
+  const mapWrap = document.getElementById("map-wrap");
+  mapWrap.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    openOverlay();
+    uploadBox.classList.add("drag-over");
+  });
+
+  fileInput.addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (file) handleFile(file);
+  });
+
+  async function handleFile(file) {
+    const name = file.name.toLowerCase();
+    if (!name.endsWith(".tif") && !name.endsWith(".tiff") && !name.endsWith(".kml")) {
+      setOverlayError("Unsupported file type. Please upload a GeoTIFF (.tif, .tiff) or KML (.kml) file.");
+      return;
+    }
+
+    setOverlayLoading();
+
     const form = new FormData();
     form.append("file", file);
 
-    const res = await fetch("/utm/file", { method: "POST", body: form });
-    const data = await res.json();
-    if (!res.ok) { showError(data.error ?? "Unknown error"); return; }
+    let data, res;
+    try {
+      res = await fetch("/utm/file", { method: "POST", body: form });
+      data = await res.json();
+    } catch {
+      setOverlayError("Upload failed — check your connection and try again.");
+      return;
+    }
+
+    fileInput.value = "";
+
+    if (!res.ok) {
+      setOverlayError(data.error ?? "Unknown error.");
+      return;
+    }
+
+    closeOverlay();
 
     const lat = data.centroid_lat;
     const lon = data.centroid_lon;
@@ -227,10 +397,7 @@
     map.flyTo([lat, lon], 8);
     setMarker(lat, lon, popup);
     showResult(data, lat, lon);
-
-    // Reset input so the same file can be re-uploaded
-    e.target.value = "";
-  });
+  }
 </script>
 </body>
 </html>
