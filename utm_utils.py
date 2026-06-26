@@ -1,18 +1,18 @@
-import math
-
-
 def _zone_letter(lat):
+    # Bands C–X, 8° each. A/B/Y/Z reserved for polar regions; I/O excluded
+    # to avoid confusion with digits 1 and 0.
     letters = "CDEFGHJKLMNPQRSTUVWX"
     if lat < -80 or lat > 84:
         return None
-    idx = int((lat + 80) / 8)
-    idx = min(idx, len(letters) - 1)
+    # lat=84 produces index 20 (out of range for 20-element string), so clamp to X.
+    idx = min(int((lat + 80) / 8), len(letters) - 1)
     return letters[idx]
 
 
 def lat_lon_to_utm(lat, lon):
-    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-        raise ValueError(f"Invalid coordinates: lat={lat}, lon={lon}")
+    lon = ((lon + 180) % 360 + 360) % 360 - 180
+    if not (-90 <= lat <= 90):
+        raise ValueError(f"Invalid latitude: lat={lat}")
 
     zone_number = int((lon + 180) / 6) + 1
     if lon == 180:
@@ -42,4 +42,6 @@ def lat_lon_to_utm(lat, lon):
         "hemisphere": hemisphere,
         "crs_code": f"EPSG:{epsg}",
         "crs_name": f"WGS 84 / UTM zone {zone_number}{hemisphere}",
+        "lat": lat,
+        "lon": lon,
     }

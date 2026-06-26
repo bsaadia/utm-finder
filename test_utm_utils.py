@@ -1,5 +1,5 @@
 import pytest
-from utm_utils import lat_lon_to_utm
+from utm_utils import _zone_letter, lat_lon_to_utm
 
 
 def test_basic_north():
@@ -83,3 +83,33 @@ def test_invalid_lat():
 def test_invalid_lon():
     with pytest.raises(ValueError):
         lat_lon_to_utm(0.0, 181.0)
+
+
+def test_crs_name_southern():
+    result = lat_lon_to_utm(-33.8688, 151.2093)  # Sydney
+    assert result["crs_name"] == "WGS 84 / UTM zone 56S"
+
+
+# _zone_letter boundary tests
+def test_zone_letter_bottom_boundary():
+    # lat=-80 is the first valid band (C)
+    assert _zone_letter(-80.0) == "C"
+
+
+def test_zone_letter_just_below_bottom_boundary():
+    assert _zone_letter(-80.1) is None
+
+
+def test_zone_letter_top_boundary():
+    # lat=84 is the last valid band (X); the index clamp is required here
+    assert _zone_letter(84.0) == "X"
+
+
+def test_zone_letter_just_above_top_boundary():
+    assert _zone_letter(84.1) is None
+
+
+def test_zone_letter_x_band():
+    # Band X spans 72–84 (12° wide, unlike the standard 8°)
+    assert _zone_letter(72.0) == "X"
+    assert _zone_letter(80.0) == "X"

@@ -8,7 +8,7 @@
 
 - Click anywhere on a Leaflet map → returns UTM zone + CRS
 - Search a place name → returns UTM zone + CRS
-- Upload a WGS84 file (locally, client-side) → detect UTM zone + CRS
+- Upload a WGS84 file → detect UTM zone + CRS
 
 ## What it does NOT do
 

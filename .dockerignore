@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+.git/
+.gitignore
+CLAUDE.md
+test_utm_utils.py
