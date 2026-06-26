@@ -77,14 +77,14 @@
       background: rgba(255,255,255,0.92);
       border: 2px dashed #93c5fd;
       border-radius: 12px;
-      padding: 40px 48px;
+      padding: 52px 60px;
       text-align: center;
-      min-width: 320px;
-      max-width: 420px;
+      min-width: 340px;
+      max-width: 460px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 14px;
+      gap: 20px;
       transition: border-color 0.15s, background 0.15s;
     }
     #upload-box.drag-over {
@@ -106,7 +106,7 @@
       padding: 6px 12px;
     }
 
-    #upload-box .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+    #upload-box .btn-row { display: flex; gap: 8px; margin-top: 4px; justify-content: center; }
 
     #upload-error {
       font-size: 0.8rem;
@@ -367,6 +367,12 @@
       return;
     }
 
+    const MAX_BYTES = 5 * 1024 * 1024 * 1024;
+    if (file.size > MAX_BYTES) {
+      setOverlayError(`File is too large (${(file.size / 1024 / 1024 / 1024).toFixed(1)} GB). Maximum size is 5 GB.`);
+      return;
+    }
+
     setOverlayLoading();
 
     const form = new FormData();
@@ -375,9 +381,19 @@
     let data, res;
     try {
       res = await fetch("/utm/file", { method: "POST", body: form });
-      data = await res.json();
     } catch {
       setOverlayError("Upload failed — check your connection and try again.");
+      return;
+    }
+
+    try {
+      data = await res.json();
+    } catch {
+      if (res.status === 413) {
+        setOverlayError("File is too large (limit: 50 MB).");
+      } else {
+        setOverlayError(`Server error (${res.status}). Try again.`);
+      }
       return;
     }
 

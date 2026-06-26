@@ -1,12 +1,15 @@
-import io
+import os
+import tempfile
 import xml.etree.ElementTree as ET
+import rasterio
+from rasterio.crs import CRS
 
 from flask import Flask, jsonify, render_template, request
 
 from utm_utils import lat_lon_to_utm
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
+app.config["MAX_CONTENT_LENGTH"] = 1 * 1024 * 1024 * 1024  # 5 GB
 
 
 @app.route("/")
@@ -60,26 +63,28 @@ def utm_file():
 
 
 def _centroid_from_tiff(file_storage):
-    import rasterio
-    from rasterio.crs import CRS
-    from rasterio.warp import transform_bounds
+    with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp:
+        file_storage.save(tmp)
+        tmp_path = tmp.name
 
-    data = file_storage.read()
-    with rasterio.open(io.BytesIO(data)) as ds:
-        bounds = ds.bounds
-        src_crs = ds.crs
+    try:
+        with rasterio.open(tmp_path) as ds:
+            bounds = ds.bounds
+            src_crs = ds.crs
 
-        if src_crs is None:
-            raise ValueError("File has no CRS defined — cannot verify it is WGS84.")
+            if src_crs is None:
+                raise ValueError("File has no CRS defined — cannot verify it is WGS84.")
 
-        wgs84 = CRS.from_epsg(4326)
-        if not src_crs.is_geographic or not src_crs.equals(wgs84):
-            raise ValueError(
-                f"File CRS is {src_crs.to_string()!r}, not WGS84 (EPSG:4326). "
-                "Reproject to WGS84 before uploading."
-            )
+            wgs84 = CRS.from_epsg(4326)
+            if not src_crs.is_geographic or src_crs != wgs84:
+                raise ValueError(
+                    f"File CRS is {src_crs.to_string()!r}, not WGS84 (EPSG:4326). "
+                    "Reproject to WGS84 before uploading."
+                )
 
-        left, bottom, right, top = bounds.left, bounds.bottom, bounds.right, bounds.top
+            left, bottom, right, top = bounds.left, bounds.bottom, bounds.right, bounds.top
+    finally:
+        os.unlink(tmp_path)
 
     lat = (bottom + top) / 2
     lon = (left + right) / 2
