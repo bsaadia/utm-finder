@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 import logging
 import os
@@ -32,7 +34,7 @@ def utm():
         lat = float(data["lat"])
         lon = float(data["lon"])
     except (KeyError, TypeError, ValueError):
-        return jsonify({"error": "Invalid lat/lon"}), 400
+        return jsonify({"error": "Invalid lat/lon."}), 400
 
     try:
         result = lat_lon_to_utm(lat, lon)
@@ -45,108 +47,110 @@ def utm():
 @app.route("/utm/file", methods=["POST"])
 def utm_file():
     if "file" not in request.files:
-        return jsonify({"error": "No file provided"}), 400
+        return jsonify({"error": "No file provided."}), 400
 
     f = request.files["file"]
     filename = f.filename.lower()
 
     if filename.endswith(".kml"):
-        raw = f.read()
+        kml_bytes = f.read()
     elif filename.endswith(".kmz"):
         try:
             with zipfile.ZipFile(io.BytesIO(f.read())) as zf:
                 kml_names = [n for n in zf.namelist() if n.lower().endswith(".kml")]
                 if not kml_names:
-                    return jsonify({"error": "No KML file found inside KMZ archive"}), 422
-                raw = zf.read(kml_names[0])
+                    return jsonify({"error": "No KML file found inside KMZ archive."}), 422
+                kml_bytes = zf.read(kml_names[0])
         except zipfile.BadZipFile:
-            return jsonify({"error": "Could not read KMZ: file is not a valid ZIP archive"}), 422
+            return jsonify({"error": "Could not read KMZ: file is not a valid ZIP archive."}), 422
     else:
         return jsonify({"error": "Unsupported file type. Upload a KML or KMZ file."}), 400
 
     try:
-        lat, lon, geojson = _parse_kml(raw)
+        lat, lon, geojson = _parse_kml(kml_bytes)
     except ValueError as e:
         return jsonify({"error": str(e)}), 422
-    except ET.ParseError as e:
+    except ET.ParseError:
         logging.exception("KML parse error")
-        return jsonify({"error": "Could not parse file: invalid XML"}), 422
+        return jsonify({"error": "Could not parse file: invalid XML."}), 422
 
     try:
         result = lat_lon_to_utm(lat, lon)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    result["centroid_lat"] = lat
-    result["centroid_lon"] = lon
     result["geojson"] = geojson
     return jsonify(result)
 
 
-def _parse_kml(data: bytes):
-    """Return (centroid_lat, centroid_lon, geojson_feature_collection)."""
-    root = ET.fromstring(data)
+def _strip_ns(tag: str) -> str:
+    return tag.split("}")[-1] if "}" in tag else tag
 
-    def strip_ns(tag):
-        return tag.split("}")[-1] if "}" in tag else tag
 
-    def parse_coord_str(text):
-        pairs = []
-        for token in text.strip().split():
-            parts = token.split(",")
-            if len(parts) >= 2:
-                try:
-                    pairs.append([float(parts[0]), float(parts[1])])
-                except ValueError:
-                    continue
-        return pairs
+def _parse_coord_str(text: str) -> list:
+    pairs = []
+    for token in text.strip().split():
+        parts = token.split(",")
+        if len(parts) >= 2:
+            try:
+                pairs.append([float(parts[0]), float(parts[1])])
+            except ValueError:
+                continue
+    return pairs
 
-    def coords_of(elem):
+
+def _coords_of(elem) -> list:
+    for child in elem:
+        if _strip_ns(child.tag) == "coordinates" and child.text:
+            return _parse_coord_str(child.text)
+    return []
+
+
+def _parse_geometry(elem) -> dict | None:
+    tag = _strip_ns(elem.tag)
+    if tag == "Point":
+        c = _coords_of(elem)
+        if c:
+            return {"type": "Point", "coordinates": c[0]}
+    elif tag == "LineString":
+        c = _coords_of(elem)
+        if c:
+            return {"type": "LineString", "coordinates": c}
+    elif tag == "Polygon":
+        rings = []
         for child in elem:
-            if strip_ns(child.tag) == "coordinates" and child.text:
-                return parse_coord_str(child.text)
-        return []
+            ctag = _strip_ns(child.tag)
+            if ctag in ("outerBoundaryIs", "innerBoundaryIs"):
+                for lr in child:
+                    if _strip_ns(lr.tag) == "LinearRing":
+                        c = _coords_of(lr)
+                        if c:
+                            rings.append(c)
+        if rings:
+            return {"type": "Polygon", "coordinates": rings}
+    elif tag == "MultiGeometry":
+        geoms = [g for child in elem if (g := _parse_geometry(child))]
+        if geoms:
+            return {"type": "GeometryCollection", "geometries": geoms}
+    return None
 
-    def parse_geometry(elem):
-        tag = strip_ns(elem.tag)
-        if tag == "Point":
-            c = coords_of(elem)
-            if c:
-                return {"type": "Point", "coordinates": c[0]}
-        elif tag == "LineString":
-            c = coords_of(elem)
-            if c:
-                return {"type": "LineString", "coordinates": c}
-        elif tag == "Polygon":
-            rings = []
-            for child in elem:
-                ctag = strip_ns(child.tag)
-                if ctag in ("outerBoundaryIs", "innerBoundaryIs"):
-                    for lr in child:
-                        if strip_ns(lr.tag) == "LinearRing":
-                            c = coords_of(lr)
-                            if c:
-                                rings.append(c)
-            if rings:
-                return {"type": "Polygon", "coordinates": rings}
-        elif tag == "MultiGeometry":
-            geoms = [g for child in elem if (g := parse_geometry(child))]
-            if geoms:
-                return {"type": "GeometryCollection", "geometries": geoms}
-        return None
+
+def _parse_kml(kml_bytes: bytes) -> tuple:
+    """Return (lat, lon, geojson_feature_collection)."""
+    root = ET.fromstring(kml_bytes)
 
     features = []
     for placemark in root.iter():
-        if strip_ns(placemark.tag) != "Placemark":
+        if _strip_ns(placemark.tag) != "Placemark":
             continue
         name = None
         geom = None
         for child in placemark:
-            ctag = strip_ns(child.tag)
+            ctag = _strip_ns(child.tag)
             if ctag == "name":
                 name = child.text
             elif ctag in ("Point", "LineString", "Polygon", "MultiGeometry"):
-                geom = parse_geometry(child)
+                geom = _parse_geometry(child)
         if geom:
             features.append({
                 "type": "Feature",
@@ -156,7 +160,7 @@ def _parse_kml(data: bytes):
 
     all_coords = _extract_coords_from_features(features)
     if not all_coords:
-        raise ValueError("No coordinates found in KML")
+        raise ValueError("No coordinates found in KML.")
 
     # GeoJSON coordinates are [lon, lat]
     lat = sum(c[1] for c in all_coords) / len(all_coords)
@@ -164,15 +168,14 @@ def _parse_kml(data: bytes):
     return lat, lon, {"type": "FeatureCollection", "features": features}
 
 
-def _extract_coords_from_features(features):
-    """Collect all [lon, lat] coordinate pairs from a list of GeoJSON features."""
+def _extract_coords_from_features(features: list) -> list:
     coords = []
     for feature in features:
         coords.extend(_extract_coords(feature["geometry"]))
     return coords
 
 
-def _extract_coords(geom):
+def _extract_coords(geom: dict | None) -> list:
     """Recursively collect all [lon, lat] pairs from a GeoJSON geometry."""
     if geom is None:
         return []
@@ -180,7 +183,7 @@ def _extract_coords(geom):
     if t == "Point":
         return [geom["coordinates"]]
     if t in ("LineString", "MultiPoint"):
-        return geom["coordinates"]
+        return list(geom["coordinates"])  # copy, not a reference to the source geometry
     if t in ("Polygon", "MultiLineString"):
         return [p for ring in geom["coordinates"] for p in ring]
     if t == "MultiPolygon":

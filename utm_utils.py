@@ -1,4 +1,7 @@
-def _zone_letter(lat):
+from __future__ import annotations
+
+
+def _zone_letter(lat: float) -> str | None:
     # Bands C–X, 8° each. A/B/Y/Z reserved for polar regions; I/O excluded
     # to avoid confusion with digits 1 and 0.
     letters = "CDEFGHJKLMNPQRSTUVWX"
@@ -9,10 +12,10 @@ def _zone_letter(lat):
     return letters[idx]
 
 
-def lat_lon_to_utm(lat, lon):
+def lat_lon_to_utm(lat: float, lon: float) -> dict:
     lon = ((lon + 180) % 360 + 360) % 360 - 180
     if not (-90 <= lat <= 90):
-        raise ValueError(f"Invalid latitude: lat={lat}")
+        raise ValueError(f"Invalid latitude: lat={lat}.")
 
     zone_number = int((lon + 180) / 6) + 1
     if lon == 180:

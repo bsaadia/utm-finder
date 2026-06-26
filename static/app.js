@@ -12,6 +12,12 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 let marker = null;
 let kmlLayer = null;
 
+// Capture once; reused by showResult / showLoading / showError.
+const resultBar    = document.getElementById("result-bar");
+const resultZone   = document.getElementById("result-zone");
+const resultCrs    = document.getElementById("result-crs");
+const resultCoords = document.getElementById("result-coords");
+
 function clearKmlLayer() {
   if (kmlLayer) { map.removeLayer(kmlLayer); kmlLayer = null; }
 }
@@ -31,27 +37,24 @@ function zoneLabel(data) {
 }
 
 function showResult(data, lat, lon) {
-  const bar = document.getElementById("result-bar");
-  bar.className = "";
-  document.getElementById("result-zone").textContent = zoneLabel(data);
-  document.getElementById("result-crs").textContent = `${data.crs_code} — ${data.crs_name}`;
-  document.getElementById("result-coords").textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  resultBar.className = "";
+  resultZone.textContent = zoneLabel(data);
+  resultCrs.textContent  = `${data.crs_code} — ${data.crs_name}`;
+  resultCoords.textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 }
 
 function showLoading() {
-  const bar = document.getElementById("result-bar");
-  bar.className = "loading";
-  document.getElementById("result-zone").textContent = "Looking up UTM zone…";
-  document.getElementById("result-crs").textContent = "";
-  document.getElementById("result-coords").textContent = "";
+  resultBar.className = "loading";
+  resultZone.textContent = "Looking up UTM zone…";
+  resultCrs.textContent  = "";
+  resultCoords.textContent = "";
 }
 
 function showError(msg) {
-  const bar = document.getElementById("result-bar");
-  bar.className = "error";
-  document.getElementById("result-zone").textContent = msg;
-  document.getElementById("result-crs").textContent = "";
-  document.getElementById("result-coords").textContent = "";
+  resultBar.className = "error";
+  resultZone.textContent = msg;
+  resultCrs.textContent  = "";
+  resultCoords.textContent = "";
 }
 
 async function queryUTM(lat, lon) {
@@ -69,7 +72,7 @@ async function queryUTM(lat, lon) {
     showError("Request failed — check your connection and try again.");
     return;
   }
-  if (!res.ok) { showError(data.error ?? "Unknown error"); return; }
+  if (!res.ok) { showError(data.error ?? "Unknown error."); return; }
   const normLat = data.lat ?? lat;
   const normLon = data.lon ?? lon;
   setMarker(normLat, normLon, `<b>${zoneLabel(data)}</b><br>${data.crs_code}`);
@@ -100,10 +103,11 @@ async function doSearch() {
     showError("Search failed — check your connection and try again.");
     return;
   }
-  if (!results.length) { showError(`No results for "${q}"`); return; }
-  const { lat, lon } = results[0];
+  if (!results.length) { showError(`No results for "${q}".`); return; }
+  const lat = parseFloat(results[0].lat);
+  const lon = parseFloat(results[0].lon);
   map.flyTo([lat, lon], 8);
-  queryUTM(parseFloat(lat), parseFloat(lon));
+  queryUTM(lat, lon);
 }
 
 document.getElementById("search-btn").addEventListener("click", doSearch);
@@ -197,7 +201,8 @@ async function handleFile(file) {
 
   if (file.size > MAX_FILE_BYTES) {
     const mb = (file.size / 1024 / 1024).toFixed(1);
-    setOverlayError(`File is too large (${mb} MB). Maximum size is ${MAX_FILE_BYTES / 1024 / 1024} MB.`);
+    const limit = MAX_FILE_BYTES / 1024 / 1024;
+    setOverlayError(`File is too large (${mb} MB). Maximum size is ${limit} MB.`);
     return;
   }
 
@@ -219,7 +224,7 @@ async function handleFile(file) {
     data = await res.json();
   } catch {
     if (res.status === 413) {
-      setOverlayError("File is too large (limit: 10 MB).");
+      setOverlayError(`File is too large (limit: ${MAX_FILE_BYTES / 1024 / 1024} MB).`);
     } else {
       setOverlayError(`Server error (${res.status}). Try again.`);
     }
@@ -235,8 +240,8 @@ async function handleFile(file) {
 
   closeOverlay();
 
-  const lat = data.centroid_lat;
-  const lon = data.centroid_lon;
+  const lat = data.lat;
+  const lon = data.lon;
 
   if (data.geojson && data.geojson.features.length > 0) {
     kmlLayer = L.geoJSON(data.geojson, {

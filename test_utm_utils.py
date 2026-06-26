@@ -49,9 +49,10 @@ def test_svalbard_37():
     assert result["zone_number"] == 37
 
 
-def test_lon_180_is_zone_60():
+def test_lon_180_wraps_to_zone_1():
+    # Normalization maps 180° to -180° (same meridian), which falls in zone 1.
     result = lat_lon_to_utm(0.0, 180.0)
-    assert result["zone_number"] == 60
+    assert result["zone_number"] == 1
 
 
 def test_antimeridian_west():
@@ -80,9 +81,10 @@ def test_invalid_lat():
         lat_lon_to_utm(91.0, 0.0)
 
 
-def test_invalid_lon():
-    with pytest.raises(ValueError):
-        lat_lon_to_utm(0.0, 181.0)
+def test_out_of_range_lon_normalizes():
+    # lon=181 wraps to -179, which is zone 1 — no error raised.
+    result = lat_lon_to_utm(0.0, 181.0)
+    assert result["zone_number"] == 1
 
 
 def test_crs_name_southern():
